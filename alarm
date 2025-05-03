@@ -1,0 +1,77 @@
+module alarm (
+    input clk,              // 클럭
+    input rst,              
+    input up, down,         
+    input [2:0] cursor,     
+    input [3:0] sec0,       // 현재 초의 1의 자리
+    input [3:0] sec1,       // 현재 초의 10의 자리
+    input [3:0] min0,       // 현재 분의 1의 자리
+    input [3:0] min1,       // 현재 분의 10의 자리
+    input [3:0] hour0,      // 현재 시의 1의 자리
+    input [3:0] hour1,      // 현재 시의 10의 자리
+    output reg [3:0] sec0_alarm, // 알람 시간 초의 1의 자리
+    output reg [3:0] sec1_alarm, // 알람 시간 초의 10의 자리
+    output reg [3:0] min0_alarm, // 알람 시간 분의 1의 자리
+    output reg [3:0] min1_alarm, // 알람 시간 분의 10의 자리
+    output reg [3:0] hour0_alarm, // 알람 시간 시의 1의 자리
+    output reg [3:0] hour1_alarm, // 알람 시간 시의 10의 자리
+    output alarm_match       // 현재 시간과 알람 시간 비교 결과
+);
+
+    // 알람 설정 (각 자리수에 대해 up/down 버튼으로 조작)
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            sec0_alarm <= 4'd0;
+            sec1_alarm <= 4'd0;
+            min0_alarm <= 4'd0;
+            min1_alarm <= 4'd0;
+            hour0_alarm <= 4'd0;
+            hour1_alarm <= 4'd0;
+        end else begin
+            case (cursor)
+                3'd0: begin // 초의 1의 자리
+                    if (up) sec0_alarm <= (sec0_alarm == 4'd9) ? 4'd0 : sec0_alarm + 1'b1;
+                    else if (down) sec0_alarm <= (sec0_alarm == 4'd0) ? 4'd9 : sec0_alarm - 1'b1;
+                end
+                3'd1: begin // 초의 10의 자리
+                    if (up) sec1_alarm <= (sec1_alarm == 4'd5) ? 4'd0 : sec1_alarm + 1'b1;
+                    else if (down) sec1_alarm <= (sec1_alarm == 4'd0) ? 4'd5 : sec1_alarm - 1'b1;
+                end
+                3'd2: begin // 분의 1의 자리
+                    if (up) min0_alarm <= (min0_alarm == 4'd9) ? 4'd0 : min0_alarm + 1'b1;
+                    else if (down) min0_alarm <= (min0_alarm == 4'd0) ? 4'd9 : min0_alarm - 1'b1;
+                end
+                3'd3: begin // 분의 10의 자리
+                    if (up) min1_alarm <= (min1_alarm == 4'd5) ? 4'd0 : min1_alarm + 1'b1;
+                    else if (down) min1_alarm <= (min1_alarm == 4'd0) ? 4'd5 : min1_alarm - 1'b1;
+                end
+                3'd4: begin // 시의 1의 자리
+                    if (up) begin
+                        if (hour1_alarm == 4'd2) // 24시 제한: hour1이 2일 때 hour0은 0~3까지만 증가
+                            hour0_alarm <= (hour0_alarm == 4'd3) ? 4'd0 : hour0_alarm + 1'b1;
+                        else
+                            hour0_alarm <= (hour0_alarm == 4'd9) ? 4'd0 : hour0_alarm + 1'b1;
+                    end else if (down) begin
+                        if (hour1_alarm == 4'd2) // 24시 제한: hour1이 2일 때 hour0은 0~3까지만 감소
+                            hour0_alarm <= (hour0_alarm == 4'd0) ? 4'd3 : hour0_alarm - 1'b1;
+                        else
+                            hour0_alarm <= (hour0_alarm == 4'd0) ? 4'd9 : hour0_alarm - 1'b1;
+                    end
+                end
+                3'd5: begin // 시의 10의 자리
+                    if (up) hour1_alarm <= (hour1_alarm == 4'd2) ? 4'd0 : hour1_alarm + 1'b1; // 24시 제한
+                    else if (down) hour1_alarm <= (hour1_alarm == 4'd0) ? 4'd2 : hour1_alarm - 1'b1;
+                end
+                default: ; 
+            endcase
+        end
+    end
+
+    // 알람 조건 비교
+    assign alarm_match = (sec0_alarm == sec0) && //다 같으면 1 출력
+                         (sec1_alarm == sec1) &&
+                         (min0_alarm == min0) &&
+                         (min1_alarm == min1) &&
+                         (hour0_alarm == hour0) &&
+                         (hour1_alarm == hour1);
+endmodule
