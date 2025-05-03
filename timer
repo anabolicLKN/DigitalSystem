@@ -1,0 +1,125 @@
+module timer (
+    input clk,               // 6MHz 클럭
+    input rst,               
+    input counter_en,        // 1Hz 
+    input start_timer,       // 시작멈춤
+    input [2:0] cursor,      // 커서 위치
+    input up, down,          // 버튼
+    output reg [3:0] sec0,   
+    output reg [3:0] sec1,   
+    output reg [3:0] min0,   
+    output reg [3:0] min1,   
+    output reg [3:0] hour0,  
+    output reg [3:0] hour1,  
+    output reg time_up       // 타이머 종료 신호
+);
+
+    // 트리거 신호 정의
+    wire trig_sec0, trig_sec1, trig_min0, trig_min1, trig_hour0, trig_hour1;
+
+    // 트리거 조건: 자리수가 0이 되었을 때 다음 자리수를 감소시킴
+    assign trig_sec0  = (sec0 == 0);
+    assign trig_sec1  = trig_sec0 && (sec1 == 0);
+    assign trig_min0  = trig_sec1 && (min0 == 0);
+    assign trig_min1  = trig_min0 && (min1 == 0);
+    assign trig_hour0 = trig_min1 && (hour0 == 0);
+    assign trig_hour1 = trig_hour0 && (hour1 == 0);
+
+    // 타이머 종료 신호
+    always @(posedge clk or posedge rst) begin
+    if (rst)
+        time_up <= 1'b0; // 리셋 신호 최우선
+    else if (start_timer && trig_hour1)
+        time_up <= 1'b1;
+    end
+
+
+    // 초의 1의 자리 (sec0)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            sec0 <= 4'd0;
+        else if (!start_timer && cursor == 3'd0) begin
+            if (up) sec0 <= (sec0 == 9) ? 4'd0 : sec0 + 1;
+            else if (down) sec0 <= (sec0 == 0) ? 4'd9 : sec0 - 1;
+        end else if (start_timer && counter_en && !time_up) begin
+            if (sec0 > 0)
+                sec0 <= sec0 - 1;
+            else
+                sec0 <= 4'd9;
+        end
+    end
+
+    // 초의 10의 자리 (sec1)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            sec1 <= 4'd0;
+        else if (!start_timer && cursor == 3'd1) begin
+            if (up) sec1 <= (sec1 == 5) ? 4'd0 : sec1 + 1;
+            else if (down) sec1 <= (sec1 == 0) ? 4'd5 : sec1 - 1;
+        end else if (start_timer && counter_en && trig_sec0 && !time_up) begin
+            if (sec1 > 0)
+                sec1 <= sec1 - 1;
+            else
+                sec1 <= 4'd5;
+        end
+    end
+
+    // 분의 1의 자리 (min0)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            min0 <= 4'd0;
+        else if (!start_timer && cursor == 3'd2) begin
+            if (up) min0 <= (min0 == 9) ? 4'd0 : min0 + 1;
+            else if (down) min0 <= (min0 == 0) ? 4'd9 : min0 - 1;
+        end else if (start_timer && counter_en && trig_sec1 && !time_up) begin
+            if (min0 > 0)
+                min0 <= min0 - 1;
+            else
+                min0 <= 4'd9;
+        end
+    end
+
+    // 분의 10의 자리 (min1)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            min1 <= 4'd0;
+        else if (!start_timer && cursor == 3'd3) begin
+            if (up) min1 <= (min1 == 5) ? 4'd0 : min1 + 1;
+            else if (down) min1 <= (min1 == 0) ? 4'd5 : min1 - 1;
+        end else if (start_timer && counter_en && trig_min0 && !time_up) begin
+            if (min1 > 0)
+                min1 <= min1 - 1;
+            else
+                min1 <= 4'd5;
+        end
+    end
+
+    // 시의 1의 자리 (hour0)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            hour0 <= 4'd0;
+        else if (!start_timer && cursor == 3'd4) begin
+            if (up) hour0 <= (hour0 == 9) ? 4'd0 : hour0 + 1;
+            else if (down) hour0 <= (hour0 == 0) ? 4'd9 : hour0 - 1;
+        end else if (start_timer && counter_en && trig_min1 && !time_up) begin
+            if (hour0 > 0)
+                hour0 <= hour0 - 1;
+            else
+                hour0 <= 4'd9;
+        end
+    end
+
+    // 시의 10의 자리 (hour1)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            hour1 <= 4'd0;
+        else if (!start_timer && cursor == 3'd5) begin
+            if (up) hour1 <= (hour1 == 9) ? 4'd0 : hour1 + 1;
+            else if (down) hour1 <= (hour1 == 0) ? 4'd9 : hour1 - 1;
+        end else if (start_timer && counter_en && trig_hour0 && !time_up) begin
+            if (hour1 > 0)
+                hour1 <= hour1 - 1;
+        end
+    end
+
+endmodule
