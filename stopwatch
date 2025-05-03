@@ -1,0 +1,62 @@
+module stopwatch(
+    input clk,              // 6MHz 클럭
+    input rst,              //
+    input counter_en,       // 100Hz 클럭 활성화 신호
+    input stop_go,           //시작멈춤버튼 1:시작 0 멈춤
+    output reg [3:0] csec0,  // 센티초의 1의 자리
+    output reg [3:0] csec1,  // 센치초의 10의 자리
+    output reg [3:0] sec0,  // 초의 1의 자리
+    output reg [3:0] sec1,  // 초의 10의 자리
+    output reg [3:0] min0, // 분의 1의 자리
+    output reg [3:0] min1  // 분의 10의 자리
+);
+    // 트리거 신호 선언
+    wire trig0, trig1, trig2, trig3, trig4;
+
+    // 각 자리수 증가 트리거
+    assign trig0 = counter_en && (csec0 == 9);                    // csec0이 9일 때 csec1을 증가
+    assign trig1 = counter_en && (csec0 == 9) && (csec1 == 9);    // csec1이 9일 때 sec0을 증가
+    assign trig2 = counter_en && (csec0 == 9) && (csec1 == 9) && (sec0 == 9); // sec0이 9일 때 sec1을 증가
+    assign trig3 = counter_en && (csec0 == 9) && (csec1 == 9) && (sec0 == 9) && (sec1 == 5); // 59초 99센티초일 때 min0을 증가
+    assign trig4 = counter_en && (csec0 == 9) && (csec1 == 9) && (sec0 == 9) && (sec1 == 5) && (min0 == 9); // 9분 59초 99센티초일 때 min1을 증가
+
+    // csec0 (센티초의 1의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) csec0 <= 4'd0;
+        else if (counter_en && stop_go) 
+            csec0 <= (csec0 == 9) ? 4'd0 : csec0 + 1'b1;
+    end
+    // csec1 (센티초의 10의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) csec1 <= 4'd0;
+        else if (trig0 && stop_go) 
+            csec1 <= (csec1 == 9) ? 4'd0 : csec1 + 1'b1;
+    end
+
+    // sec0 (초의 1의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst)  sec0 <= 4'd0;
+        else if (trig1 && stop_go) begin
+            sec0 <= (sec0 == 9) ? 4'd0 : sec0 + 1'b1;
+        end 
+    end
+
+    // sec1 (초의 10의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) sec1 <= 4'd0;
+        else if (trig2 && stop_go) sec1 <= (sec1 == 5) ? 4'd0 : sec1 + 1'b1;
+    end
+
+    // min0 (분의 1의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) min0 <= 4'd0;
+        else if (trig3 && stop_go)  min0 <= (min0 == 9) ? 4'd0 : min0 + 1'b1;
+     end
+
+    // min1 (분의 10의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst)  min1 <= 4'd0;
+        else if (trig4 && stop_go) min1 <= (min1 == 9) ? 4'd0 : min1 + 1'b1;
+    end
+
+endmodule
