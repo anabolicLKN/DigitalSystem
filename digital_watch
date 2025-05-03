@@ -1,0 +1,106 @@
+module time_hms (
+    input clk,              // 6MHz 클럭
+    input rst,              
+    input counter_en,       // 1Hz 클럭 활성화 신호
+    input up, down,   // 버튼 신호들
+    input [2:0] cursor,     // 커서 위치
+    output reg [3:0] sec0,  // 초의 1의 자리
+    output reg [3:0] sec1,  // 초의 10의 자리
+    output reg [3:0] min0,  // 분의 1의 자리
+    output reg [3:0] min1,  // 분의 10의 자리
+    output reg [3:0] hour0, // 시의 1의 자리
+    output reg [3:0] hour1  // 시의 10의 자리
+);
+
+    // 트리거 신호 선언
+    wire trig0, trig1, trig2, trig3, trig4;
+    
+    // 각 자리수 증가 트리거
+    assign trig0 = counter_en && (sec0 == 9);                          // sec0이 9일 때 sec1을 증가
+    assign trig1 = counter_en && (sec0 == 9) && (sec1 == 5);           // sec1이 5일 때 min0을 증가
+    assign trig2 = counter_en && (sec0 == 9) && (sec1 == 5) && (min0 == 9); // min0이 9일 때 min1을 증가
+    assign trig3 = counter_en && (sec0 == 9) && (sec1 == 5) && (min0 == 9) && (min1 == 5); // min1이 5일 때 hour0을 증가
+    assign trig4 = (counter_en && (sec0 == 9) && (sec1 == 5) && (min0 == 9) && (min1 == 5) && (hour0 == 3) && (hour1 == 2)) ; // 23시59분59초 초기화
+
+    // sec0 (초의 1의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) sec0 <= 4'd0; 
+        else if (counter_en) 
+            sec0 <= (sec0 == 9) ? 4'd0 : sec0 + 1'b1;
+        else if (up == 1 && cursor == 3'd0) 
+            sec0 <= (sec0 == 9) ? 4'd0 : sec0 + 1'b1;
+        else if (down == 1 && cursor == 3'd0) 
+            sec0 <= (sec0 == 0) ? 4'd9 : sec0 - 1'b1; 
+    end
+
+    // sec1 (초의 10의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) 
+            sec1 <= 4'd0;
+        else if (trig0) 
+            sec1 <= (sec1 == 5) ? 4'd0 : sec1 + 1'b1;
+        else if (up == 1 && cursor == 3'd1) 
+            sec1 <= (sec1 == 5) ? 4'd0 : sec1 + 1'b1;
+        else if (down == 1 && cursor == 3'd1) 
+            sec1 <= (sec1 == 0) ? 4'd5 : sec1 - 1'b1; 
+    end
+
+    // min0 (분의 1의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            min0 <= 4'd0;
+        else if (trig1) 
+            min0 <= (min0 == 9) ? 4'd0 : min0 + 1'b1;
+        else if (up == 1 && cursor == 3'd2) 
+            min0 <= (min0 == 9) ? 4'd0 : min0 + 1'b1;
+        else if (down == 1 && cursor == 3'd2) 
+            min0 <= (min0 == 0) ? 4'd9 : min0 - 1'b1;
+    end
+
+    // min1 (분의 10의 자리)
+    always @(posedge clk or posedge rst) begin
+        if (rst) min1 <= 4'd0;
+        else if (trig2)
+            min1 <= (min1 == 5) ? 4'd0 : min1 + 1'b1;
+        else if (up == 1 && cursor == 3'd3) 
+            min1 <= (min1 == 5) ? 4'd0 : min1 + 1'b1;
+        else if (down == 1 && cursor == 3'd3) 
+            min1 <= (min1 == 0) ? 4'd5 : min1 - 1'b1;
+    end
+
+    // hour0 (시의 1의 자리) 제일 핵심
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            hour0 <= 4'd0;
+        end else if (trig3) begin
+            if (hour1 == 4'd2)
+                hour0 <= (hour0 == 3) ? 0 : hour0 + 1;
+            else
+                hour0 <= (hour0 == 9) ? 0 : hour0 + 1;
+        end else if (up == 1 && cursor == 3'd4) begin
+            if (hour1 == 4'd2) // 시간의 10의 자리가 2일 때
+                hour0 <= (hour0 == 3) ? 4'd0 : hour0 + 1'b1; // 0~3까지만 증가
+            else
+                hour0 <= (hour0 == 9) ? 4'd0 : hour0 + 1'b1; // 나머지는 0~9 증가
+        end else if (down == 1 && cursor == 3'd4) begin
+            if (hour1 == 4'd2) // 시간의 10의 자리가 2일 때
+                hour0 <= (hour0 == 0) ? 4'd3 : hour0 - 1'b1; // 0~3까지만 감소
+            else
+                hour0 <= (hour0 == 0) ? 4'd9 : hour0 - 1'b1; // 나머지는 0~9 감소
+        end
+    end
+
+    // hour1 (시의 10의 자리) 
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            hour1 <= 4'd0;
+        end else if (trig4) begin
+            hour1 <= 4'd0;
+        end else if (up && cursor == 3'd5) begin
+            hour1 <= (hour1 == 2) ? 4'd0 : hour1 + 1'b1;
+        end else if (down && cursor == 3'd5) begin 
+            hour1 <= (hour1 == 0) ? 4'd2 : hour1 - 1'b1;
+        end
+    end
+
+endmodule
