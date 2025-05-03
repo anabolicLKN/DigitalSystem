@@ -1,0 +1,245 @@
+module top (
+    input clk,
+    input reset_poweron,
+    input [3:0] dip_sw,
+    input [2:0] btn,
+    output reg [7:0] seg_data,  
+    output reg [5:0] seg_com,
+    output reg [3:0] light
+);
+    
+    parameter DW = 2'd0, SW = 2'd1, TM = 2'd2, AM=2'd3; // 모드 정의
+    reg [1:0] c_state, n_state; // FSM용 상태 설정
+    
+    
+    wire alarm_end; //알람 종료신호
+    
+    always @(posedge clk_6mhz or posedge rst) begin
+        if (rst) 
+            c_state <= DW;
+        else 
+            c_state <= n_state;
+    end
+    
+    always @(*) begin
+        case (c_state)
+            DW: begin
+                if (dip_sw[3:1] == 3'b100)  n_state = SW;
+                else if (dip_sw[3:1] == 3'b010)  n_state = TM;
+                else if (dip_sw[3:1] == 3'b001) n_state = AM; // 알람 모드로 전환
+                else  n_state = DW;
+            end
+            SW: begin
+                if (dip_sw[3:1] == 3'b000) n_state = DW;
+                else if (dip_sw[3:1] == 3'b010)  n_state = TM;
+                else if (dip_sw[3:1] == 3'b001)  n_state = AM; // 알람 모드로 전환
+                else  n_state = SW;
+            end
+            TM: begin
+                if (dip_sw[3:1] == 3'b000) n_state = DW;
+                else if (dip_sw[3:1] == 3'b100)  n_state = SW;
+                else if (dip_sw[3:1] == 3'b001) n_state = AM; // 알람 모드로 전환
+                else  n_state = TM;
+            end
+            AM: begin // 알람 모드
+                if (dip_sw[3:1] == 3'b000)
+                    n_state = DW; // 일반 모드로 전환
+                else if (dip_sw[3:1] == 3'b100)
+                    n_state = SW; // 스톱워치 모드로 전환
+                else if (dip_sw[3:1] == 3'b010)
+                    n_state = TM; // 타이머 모드로 전환
+                else
+                    n_state = AM; // 계속 알람 모드 유지
+            end
+            default: n_state = DW; // 기본 상태
+        endcase
+    end
+    
+   
+    // 신호들 정의
+    wire clk_6mhz;
+    
+    wire left, up, down;
+    wire [2:0] btn_pulse; 
+    
+    wire [3:0] btn_pulse_add;
+    
+    wire rst, locked; 
+    
+    wire counter_en; // 1Hz clk
+    wire clk_600hz_en; // shift register clk
+    wire clk_100hz_en; // stopwatch clk
+    
+    wire [3:0] sec0, sec1, min0, min1, hour0, hour1; // 시분초
+    wire [3:0] sec0_tm, sec1_tm, min0_tm, min1_tm, hour0_tm, hour1_tm; // 타이머 시분초
+    wire [3:0] csec0_sw, csec1_sw, sec0_sw, sec1_sw, min0_sw, min1_sw; // 스톱워치 밀리초, 초, 분
+    wire [3:0] sec0_a, sec1_a, min0_a, min1_a, hour0_a, hour1_a; // 시분초 알람
+    
+    wire [6:0] sec0_bcd, sec1_bcd, min0_bcd, min1_bcd, hour0_bcd, hour1_bcd; // 시분초를 BCD로 변환
+    wire [6:0] sec0_tm_bcd, sec1_tm_bcd, min0_tm_bcd, min1_tm_bcd, hour0_tm_bcd, hour1_tm_bcd; // 타이머 BCD 변환
+    wire [6:0] csec0_sw_bcd, csec1_sw_bcd, sec0_sw_bcd, sec1_sw_bcd, min0_sw_bcd, min1_sw_bcd; //스톱워치 BCD
+    wire [6:0] sec0_a_bcd, sec1_a_bcd, min0_a_bcd, min1_a_bcd, hour0_a_bcd, hour1_a_bcd; // 시분초를 BCD로 변환
+    
+    reg [2:0] cursor; // 점위치를 저장하는 변수
+    reg [2:0] cursor_pos; // 점위치를 추적하는 변수
+    
+    wire time_up; //타이머의 끝 출력신호
+    
+    // light
+    always @(*) begin
+        case (c_state)
+            DW: light = {4'b0001};          // 일반 시계모드 led
+            SW: light = {4'b1000};          // 스톱워치 모드 맨왼쪽 딥스위치
+            TM: light = {4'b0100};          // 타이머모드
+            AM: light = {4'b0010};          // 알람모드
+            default: light = 4'b0000;                 // 기본값: light 끔
+        endcase
+         if (alarm_end) 
+            light = 4'b1111;
+    end
+
+    
+    assign rst = reset_poweron | (~locked);
+    
+    assign rst_sw = dip_sw[3] && rst;                                   //리셋 신호들 구분
+    assign rst_hms = ~dip_sw[3]&& ~dip_sw[2]&& ~dip_sw[1] && rst;
+    assign rst_tm = dip_sw[2] && rst;
+    assign rst_a = dip_sw[1] && rst;
+    
+    assign tm_gogo = dip_sw[0] && ~dip_sw[3]; //타이머시작버튼 구분
+    assign sw_gogo = dip_sw[0] && ~dip_sw[2]; //스톱워치시 시작버튼 구분
+    
+    assign up_hms = btn_pulse[1] && ~dip_sw[2] && ~dip_sw[1]; //업다운 구분
+    assign down_hms = btn_pulse[0] && ~dip_sw[2] && ~dip_sw[1];
+    assign up_tm = btn_pulse[1] && dip_sw[2];
+    assign down_tm = btn_pulse[0] && dip_sw[2];
+    assign up_a = btn_pulse[1] && dip_sw[1];
+    assign down_a = btn_pulse[0] && dip_sw[1];
+    
+    clk_wiz_0 clk_inst (clk_6mhz, reset_poweron, locked, clk); //6mhz변환
+    gen_counter_en gen_cnt_en_inst (clk_6mhz, rst, counter_en); // counter_en == 1Hz
+    gen_counter_en #(.SIZE(10000)) gen_clk_600hz (clk_6mhz, rst, clk_600hz_en); // 600Hz 클럭 생성
+    gen_counter_en #(.SIZE(60000)) gen_clk_100hz (clk_6mhz, rst, clk_100hz_en); // 스톱워치용 센티초  
+    debounce #(.BTN_WIDTH(3)) debounce_inst (clk_6mhz, rst, btn, , btn_pulse); //디바운싱
+    
+    assign {left, up, down} = btn_pulse; //디바운싱 적용
+    
+    time_hms time_hms_inst(clk_6mhz, rst_hms, counter_en, up_hms, down_hms, cursor, sec0, sec1, min0, min1, hour0, hour1); //시계 카운터
+    stopwatch sw_inst (clk_6mhz, rst_sw , clk_100hz_en, sw_gogo, csec0_sw, csec1_sw, sec0_sw, sec1_sw, min0_sw, min1_sw); //스톱워치
+    timer tm_inst (clk_6mhz, rst_tm, counter_en, tm_gogo, cursor, up_tm, down_tm, sec0_tm, sec1_tm, min0_tm, min1_tm, hour0_tm, hour1_tm, time_up); //타이머
+    alarm alarm_inst (clk_6mhz, rst_a, up_a, down_a, cursor, sec0, sec1, min0, min1, hour0, hour1, sec0_a, sec1_a, min0_a, min1_a, hour0_a, hour1_a, alarm_end); //시계와 비교하는알람
+    
+    dec7 dec7_csec0_sw (csec0_sw, csec0_sw_bcd); //stopwatch용 시간
+    dec7 dec7_csec1_sw (csec1_sw, csec1_sw_bcd);
+    dec7 dec7_sec0_sw (sec0_sw, sec0_sw_bcd);
+    dec7 dec7_sec1_sw (sec1_sw, sec1_sw_bcd);
+    dec7 dec7_min0_sw (min0_sw, min0_sw_bcd);
+    dec7 dec7_min1_sw (min1_sw, min1_sw_bcd);
+    
+    dec7 dec7_sec0 (sec0, sec0_bcd); //time_hms 용 시간
+    dec7 dec7_sec1 (sec1, sec1_bcd);
+    dec7 dec7_min0 (min0, min0_bcd);
+    dec7 dec7_min1 (min1, min1_bcd);
+    dec7 dec7_hour0 (hour0, hour0_bcd);
+    dec7 dec7_hour1 (hour1, hour1_bcd);
+    
+    dec7 dec7_sec0_tm (sec0_tm, sec0_tm_bcd); //timer용 시간
+    dec7 dec7_sec1_tm (sec1_tm, sec1_tm_bcd);
+    dec7 dec7_min0_tm (min0_tm, min0_tm_bcd);
+    dec7 dec7_min1_tm (min1_tm, min1_tm_bcd);
+    dec7 dec7_hour0_tm (hour0_tm, hour0_tm_bcd);
+    dec7 dec7_hour1_tm (hour1_tm, hour1_tm_bcd);
+    
+    dec7 dec7_sec0_a (sec0_a, sec0_a_bcd); //alarm 용 시간출력
+    dec7 dec7_sec1_a (sec1_a, sec1_a_bcd);
+    dec7 dec7_min0_a (min0_a, min0_a_bcd);
+    dec7 dec7_min1_a (min1_a, min1_a_bcd);
+    dec7 dec7_hour0_a (hour0_a, hour0_a_bcd);
+    dec7 dec7_hour1_a (hour1_a, hour1_a_bcd);
+
+    // 시프트 레지스터 잔상 효과
+    always @(posedge clk_6mhz or posedge rst) begin 
+        if (rst) begin
+            seg_com <= 6'b000001;
+            cursor_pos <= 3'b0;
+        end else if (clk_600hz_en) begin
+            seg_com <= {seg_com[4:0], seg_com[5]};
+            cursor_pos <= cursor_pos + 1;
+            if (cursor_pos == 3'b101)
+                cursor_pos <= 0;
+        end
+    end
+    // 7세그먼트 출력
+    always @(*) begin
+        case (c_state)
+            DW: begin // 일반 시계 모드
+                case (cursor_pos)
+                    3'd0: seg_data = {sec0_bcd, (cursor == cursor_pos)};
+                    3'd1: seg_data = {sec1_bcd, (cursor == cursor_pos)};
+                    3'd2: seg_data = {min0_bcd, (cursor == cursor_pos)};
+                    3'd3: seg_data = {min1_bcd, (cursor == cursor_pos)};
+                    3'd4: seg_data = {hour0_bcd, (cursor == cursor_pos)};
+                    3'd5: seg_data = {hour1_bcd, (cursor == cursor_pos)};
+                    default: seg_data = 8'b00000000;
+                endcase
+            end
+
+            SW: begin // 스톱워치 모드
+                case (cursor_pos)
+                    3'd0: seg_data = {csec0_sw_bcd, 1'b0};
+                    3'd1: seg_data = {csec1_sw_bcd, 1'b0};
+                    3'd2: seg_data = {sec0_sw_bcd, 1'b1};
+                    3'd3: seg_data = {sec1_sw_bcd, 1'b0};
+                    3'd4: seg_data = {min0_sw_bcd, 1'b1};
+                    3'd5: seg_data = {min1_sw_bcd, 1'b0};
+                    default: seg_data = 8'b00000000;
+                endcase
+            end
+
+            TM: begin // 타이머 모드
+            if (time_up) begin
+                // 시간이 다 되었을 때 "END"를 표시
+                case (cursor_pos)
+                    3'd2: seg_data = 8'b10011110; // "E"
+                    3'd1: seg_data = 8'b00101010; // "n"
+                    3'd0: seg_data = 8'b01111010; // "d"
+                    default: seg_data = 8'b00000000; // 다른 자리는 꺼짐
+                endcase
+            end else begin
+                // 타이머가 동작 중일 때 정상적인 타이머 값 표시
+                case (cursor_pos)
+                    3'd0: seg_data = {sec0_tm_bcd, (cursor == cursor_pos)};
+                    3'd1: seg_data = {sec1_tm_bcd, (cursor == cursor_pos)};
+                    3'd2: seg_data = {min0_tm_bcd, (cursor == cursor_pos)};
+                    3'd3: seg_data = {min1_tm_bcd, (cursor == cursor_pos)};
+                    3'd4: seg_data = {hour0_tm_bcd, (cursor == cursor_pos)};
+                    3'd5: seg_data = {hour1_tm_bcd, (cursor == cursor_pos)};
+                    default: seg_data = 8'b00000000;
+                endcase
+            end
+        end
+            AM: begin // 일반 시계 모드
+                case (cursor_pos)
+                    3'd0: seg_data = {sec0_a_bcd, (cursor == cursor_pos)};
+                    3'd1: seg_data = {sec1_a_bcd, (cursor == cursor_pos)};
+                    3'd2: seg_data = {min0_a_bcd, (cursor == cursor_pos)};
+                    3'd3: seg_data = {min1_a_bcd, (cursor == cursor_pos)};
+                    3'd4: seg_data = {hour0_a_bcd, (cursor == cursor_pos)};
+                    3'd5: seg_data = {hour1_a_bcd, (cursor == cursor_pos)};
+                    default: seg_data = 8'b00000000;
+                endcase
+            end
+        default: seg_data = 8'b00000000; // 기본값으로 디스플레이 끔
+    endcase
+end
+     
+
+    // 커서 위치 업데이트 left == btn_pulse[2]
+    always @(posedge clk_6mhz or posedge rst) begin
+        if (rst)
+            cursor <= 0;
+        else if (btn_pulse[2])
+            cursor <= (cursor == 3'b101) ? 0 : cursor + 1;
+    end
+
+endmodule
